@@ -2,6 +2,7 @@
 #include <openssl/rand.h>
 #include <cwctype>
 #include <string>
+#include <codecvt>
 #include <optional>
 #include <locale>
 #include <ctype.h>
@@ -24,7 +25,7 @@ bool CheckUsername(std::u16string_view view){
     auto& facet = std::use_facet<std::ctype<char16_t>>(std::locale());
     auto IsSymbOkPred = [&facet](char16_t symb){
         symb = facet.tolower(symb);
-        return bool(symb >= u'a' && symb <= u'z')|| bool(symb >= u'а' && symb <= u'я') || bool(symb == u'ё') ||
+        return bool(symb >= u'a' && symb <= u'z')|| bool(symb >= 1072 && symb <= 1103) || bool(symb == 1105) ||
                 bool(symb >= u'0' && symb <= u'9') || bool(symb == u'_');
 
     };
@@ -100,6 +101,7 @@ RegistState AuthTempl::TryToRegistr(const RegData& data, std::string_view global
                 result = RegistState::AlreadyRegistered;
             }
             else{
+                std::wstring_convert<std::codecvt_utf16<char16_t>, char16_t> converter;
                 const std::size_t bCount = 30;
                 unsigned char salt[bCount];
                 auto written = RAND_bytes(salt, bCount);
@@ -107,7 +109,8 @@ RegistState AuthTempl::TryToRegistr(const RegData& data, std::string_view global
                     std::size_t NonSoltedSz = std::get<2>(data).length() * sizeof(char16_t);
                     const std::size_t salted1Size = NonSoltedSz + bCount;
                     std::unique_ptr<unsigned char[]> saltedBuf1 = std::make_unique<unsigned char[]>(salted1Size);
-                    std::memcpy(saltedBuf1.get(), std::get<2>(data).c_str(), NonSoltedSz);
+                    auto bData = converter.to_bytes(std::get<2>(data));
+                    std::memcpy(saltedBuf1.get(), bData.c_str(), NonSoltedSz);
                     std::memcpy(saltedBuf1.get() + NonSoltedSz, salt, bCount);
                     unsigned char hash1[SHA256_DIGEST_LENGTH];
                     unsigned char hash2[SHA256_DIGEST_LENGTH];
@@ -124,8 +127,10 @@ RegistState AuthTempl::TryToRegistr(const RegData& data, std::string_view global
                     SHA256_Init(&ctx2);
                     SHA256_Update(&ctx2, saltedBuf2.get(), salted2Size);
                     SHA256_Final(hash2, &ctx2);
+                    auto bEmail = converter.to_bytes(std::get<0>(data));
+                    auto bUsername = converter.to_bytes(std::get<1>(data));
                     table.insert("id", "email", "username", "passH", "salt").values("NULL",
-                                 L"a", L"d", (char*)(hash2), (char*)salt);
+                                 bEmail, bUsername, (char*)(hash2), (char*)salt);
                 }
                 else{
                     throw std::runtime_error("OpenSSL gen error");
